@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="login-page">
+  <div class="login-box">
+    <h1>Private Script Host</h1>
+    <p class="subtitle">Enter password to continue</p>
+    <form id="loginForm">
+      <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
+      <button type="submit">Login</button>
+    </form>
+    <p id="error" class="error" style="display:none;"></p>
+  </div>
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const password = document.getElementById('password').value;
+      const errorEl = document.getElementById('error');
+      errorEl.style.display = 'none';
+
+      try {
+        const res = await fetch('/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          window.location.href = '/';
+        } else {
+          errorEl.textContent = data.error || 'Invalid password';
+          errorEl.style.display = 'block';
+        }
+      } catch (err) {
+        errorEl.textContent = 'Network error';
+        errorEl.style.display = 'block';
+      }
+    });
+  </script>
+</body>
+</html>

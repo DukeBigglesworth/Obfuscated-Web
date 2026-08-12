@@ -1,0 +1,197 @@
+const scriptNameInput = document.getElementById('scriptName');
+const scriptContentInput = document.getElementById('scriptContent');
+const saveBtn = document.getElementById('saveBtn');
+const clearBtn = document.getElementById('clearBtn');
+const statusEl = document.getElementById('status');
+const scriptListEl = document.getElementById('scriptList');
+const logoutBtn = document.getElementById('logoutBtn');
+
+const modal = document.getElementById('modal');
+const modalTitle = document.getElementById('modalTitle');
+const modalContent = document.getElementById('modalContent');
+const closeModal = document.getElementById('closeModal');
+const copyRawBtn = document.getElementById('copyRawBtn');
+const updateFromModalBtn = document.getElementById('updateFromModalBtn');
+const deleteBtn = document.getElementById('deleteBtn');
+const modalStatus = document.getElementById('modalStatus');
+
+let currentScriptName = null;
+
+function setStatus(el, msg, type = '') {
+  el.textContent = msg;
+  el.className = 'status ' + type;
+}
+
+async function loadScripts() {
+  try {
+    const res = await fetch('/api/scripts');
+    if (res.status === 401) {
+      window.location.href = '/login';
+      return;
+    }
+    const list = await res.json();
+    renderList(list);
+  } catch (err) {
+    scriptListEl.innerHTML = '<p class="empty">Failed to load scripts</p>';
+  }
+}
+
+function renderList(list) {
+  if (!list.length) {
+    scriptListEl.innerHTML = '<p class="empty">No scripts yet. Upload one above.</p>';
+    return;
+  }
+
+  scriptListEl.innerHTML = list
+    .sort((a, b) => new Date(b.updated) - new Date(a.updated))
+    .map(s => {
+      const sizeKb = (s.size / 1024).toFixed(1);
+      const date = new Date(s.updated).toLocaleString();
+      return `
+        <div class="script-item" data-name="${s.name}">
+          <div class="script-info">
+            <span class="script-name">${s.name}</span>
+            <span class="script-meta">${sizeKb} KB · ${date}</span>
+          </div>
+        </div>
+      `;
+    })
+    .join('');
+
+  document.querySelectorAll('.script-item').forEach(el => {
+    el.addEventListener('click', () => openScript(el.dataset.name));
+  });
+}
+
+async function openScript(name) {
+  try {
+    const res = await fetch(`/api/scripts/${encodeURIComponent(name)}`);
+    if (!res.ok) throw new Error('Failed to load');
+    const data = await res.json();
+    currentScriptName = data.name;
+    modalTitle.textContent = data.name;
+    modalContent.value = data.content;
+    modalStatus.textContent = '';
+    modal.style.display = 'flex';
+  } catch (err) {
+    alert('Could not open script');
+  }
+}
+
+saveBtn.addEventListener('click', async () => {
+  const name = scriptNameInput.value.trim();
+  const content = scriptContentInput.value;
+
+  if (!name) {
+    setStatus(statusEl, 'Name is required', 'error');
+    return;
+  }
+  if (!content.trim()) {
+    setStatus(statusEl, 'Content is required', 'error');
+    return;
+  }
+
+  saveBtn.disabled = true;
+  setStatus(statusEl, 'Saving...', '');
+
+  try {
+    const res = await fetch('/api/scripts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, content })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setStatus(statusEl, data.error || 'Failed', 'error');
+    } else {
+      setStatus(statusEl, `${data.message} → ${window.location.origin}${data.rawUrl}`, 'success');
+      scriptNameInput.value = '';
+      scriptContentInput.value = '';
+      loadScripts();
+    }
+  } catch (err) {
+    setStatus(statusEl, 'Network error', 'error');
+  } finally {
+    saveBtn.disabled = false;
+  }
+});
+
+clearBtn.addEventListener('click', () => {
+  scriptNameInput.value = '';
+  scriptContentInput.value = '';
+  setStatus(statusEl, '', '');
+});
+
+logoutBtn.addEventListener('click', async () => {
+  await fetch('/logout', { method: 'POST' });
+  window.location.href = '/login';
+});
+
+closeModal.addEventListener('click', () => {
+  modal.style.display = 'none';
+  currentScriptName = null;
+});
+
+copyRawBtn.addEventListener('click', () => {
+  if (!currentScriptName) return;
+  const url = `${window.location.origin}/raw/${currentScriptName}`;
+  navigator.clipboard.writeText(url).then(() => {
+    setStatus(modalStatus, 'Raw URL copied to clipboard!', 'success');
+  }).catch(() => {
+    setStatus(modalStatus, url, 'success');
+  });
+});
+
+updateFromModalBtn.addEventListener('click', async () => {
+  if (!currentScriptName) return;
+  const content = modalContent.value;
+  setStatus(modalStatus, 'Updating...', '');
+
+  try {
+    const res = await fetch('/api/scripts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: currentScriptName, content })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setStatus(modalStatus, data.error || 'Failed', 'error');
+    } else {
+      setStatus(modalStatus, 'Updated successfully', 'success');
+      loadScripts();
+    }
+  } catch (err) {
+    setStatus(modalStatus, 'Network error', 'error');
+  }
+});
+
+deleteBtn.addEventListener('click', async () => {
+  if (!currentScriptName) return;
+  if (!confirm(`Delete "${currentScriptName}" permanently?`)) return;
+
+  try {
+    const res = await fetch(`/api/scripts/${encodeURIComponent(currentScriptName)}`, {
+      method: 'DELETE'
+    });
+    if (res.ok) {
+      modal.style.display = 'none';
+      currentScriptName = null;
+      loadScripts();
+    } else {
+      setStatus(modalStatus, 'Delete failed', 'error');
+    }
+  } catch (err) {
+    setStatus(modalStatus, 'Network error', 'error');
+  }
+});
+
+// Close modal on backdrop click
+modal.addEventListener('click', (e) => {
+  if (e.target === modal) {
+    modal.style.display = 'none';
+    currentScriptName = null;
+  }
+});
+
+// Initial load
+loadScripts();
